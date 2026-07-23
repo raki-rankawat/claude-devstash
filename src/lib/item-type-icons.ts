@@ -34,3 +34,25 @@ export const ITEM_TYPE_TEXT_COLOR: Record<string, string> = {
   image: "text-image",
   link: "text-link",
 };
+
+/** Left-border accent utility per ItemType.name (drives card accents). */
+export const ITEM_TYPE_BORDER_COLOR: Record<string, string> = {
+  snippet: "border-l-snippet",
+  prompt: "border-l-prompt",
+  command: "border-l-command",
+  note: "border-l-note",
+  file: "border-l-file",
+  image: "border-l-image",
+  link: "border-l-link",
+};
+
+/** Soft (10% alpha) background utility per ItemType.name, for tinted icon chips. */
+export const ITEM_TYPE_SOFT_BG: Record<string, string> = {
+  snippet: "bg-snippet/10",
+  prompt: "bg-prompt/10",
+  command: "bg-command/10",
+  note: "bg-note/10",
+  file: "bg-file/10",
+  image: "bg-image/10",
+  link: "bg-link/10",
+};

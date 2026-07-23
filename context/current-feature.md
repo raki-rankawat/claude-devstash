@@ -6,7 +6,7 @@
 
 <!-- Not Started|In Progress|Completed -->
 
-Not Started
+Completed
 
 ## Goals
 
@@ -21,3 +21,4 @@ Not Started
 <!-- Keep this updated. Earliest to latest -->
 
 - Project setup and boilerplate cleanup
+- Dashboard UI Phase 1 — ShadCN init + components, `/dashboard` route, dashboard shell layout (sidebar/main placeholders), dark mode by default, top bar with display-only search and New Item button

@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 import { PrismaNeon } from "@prisma/adapter-neon";
+import bcrypt from "bcryptjs";
 
 import { PrismaClient } from "../src/generated/prisma/client";
 
@@ -25,6 +26,12 @@ const SYSTEM_TYPES = [
   "link",
 ];
 
+// Must match prisma/seed.ts.
+const DEMO_EMAIL = "demo@devstash.io";
+const DEMO_PASSWORD = "12345678";
+const EXPECTED_COLLECTIONS = 5;
+const EXPECTED_ITEMS = 18;
+
 let passed = 0;
 let failed = 0;
 
@@ -46,8 +53,12 @@ function assert(condition: boolean, message: string) {
   }
 }
 
-async function main() {
-  console.log("\nDevStash database check\n");
+function section(title: string) {
+  console.log(`\n${title}\n`);
+}
+
+async function checkSchema() {
+  section("Schema");
 
   await check("connects to Neon", async () => {
     // current_database() is cast to text because Prisma cannot deserialize
@@ -81,12 +92,194 @@ async function main() {
     );
     return found.join(", ");
   });
+}
 
-  // Round-trip write test. Everything hangs off one user, so deleting that
-  // user at the end cascades the whole fixture away.
+async function checkDemoData() {
+  section("Demo data");
+
+  const user = await prisma.user.findUnique({ where: { email: DEMO_EMAIL } });
+
+  if (!user) {
+    console.log(`  FAIL  demo user exists — ${DEMO_EMAIL} not found, run \`npm run db:seed\``);
+    failed++;
+    return;
+  }
+
+  await check("demo user exists", async () => {
+    assert(user.name === "Demo User", `name is "${user.name}"`);
+    assert(user.isPro === false, "isPro should be false");
+    assert(user.emailVerified !== null, "emailVerified is not set");
+    return `${user.email} — "${user.name}", isPro=${user.isPro}, verified ${user.emailVerified?.toISOString().slice(0, 10)}`;
+  });
+
+  await check("password is a valid bcrypt hash", async () => {
+    assert(user.password !== null, "no password stored");
+    const hash = user.password!;
+    const rounds = hash.split("$")[2];
+    assert(hash.startsWith("$2"), "not a bcrypt hash");
+    assert(rounds === "12", `hashed with ${rounds} rounds, expected 12`);
+    assert(
+      await bcrypt.compare(DEMO_PASSWORD, hash),
+      "the seeded password does not verify",
+    );
+    assert(
+      !(await bcrypt.compare("wrong-password", hash)),
+      "an incorrect password verified",
+    );
+    return `${rounds} rounds, verifies correctly and rejects a wrong password`;
+  });
+
+  const collections = await loadCollections(user.id);
+
+  const items = await prisma.item.findMany({
+    where: { userId: user.id },
+    include: { itemType: true, collections: true },
+  });
+
+  await check("collections seeded", async () => {
+    assert(
+      collections.length === EXPECTED_COLLECTIONS,
+      `found ${collections.length}, expected ${EXPECTED_COLLECTIONS}`,
+    );
+    return collections.map((c) => c.name).join(", ");
+  });
+
+  await check("items seeded", async () => {
+    assert(
+      items.length === EXPECTED_ITEMS,
+      `found ${items.length}, expected ${EXPECTED_ITEMS}`,
+    );
+    const byType = new Map<string, number>();
+    for (const item of items) {
+      byType.set(item.itemType.name, (byType.get(item.itemType.name) ?? 0) + 1);
+    }
+    return [...byType.entries()]
+      .sort()
+      .map(([name, count]) => `${count} ${name}`)
+      .join(", ");
+  });
+
+  await check("every item belongs to a collection", async () => {
+    const orphans = items.filter((i) => i.collections.length === 0);
+    assert(orphans.length === 0, `orphans: ${orphans.map((i) => i.title).join(", ")}`);
+    return `${items.length} items linked`;
+  });
+
+  await check("contentType matches item type", async () => {
+    const wrong = items.filter(
+      (i) => i.contentType !== (i.itemType.name === "link" ? "URL" : "TEXT"),
+    );
+    assert(
+      wrong.length === 0,
+      wrong.map((i) => `${i.title} is ${i.contentType}`).join(", "),
+    );
+    return "links are URL, everything else is TEXT";
+  });
+
+  await check("links point at real URLs", async () => {
+    const links = items.filter((i) => i.itemType.name === "link");
+    const bad = links.filter((i) => !i.url?.startsWith("https://"));
+    assert(bad.length === 0, `missing https url: ${bad.map((i) => i.title).join(", ")}`);
+    return `${links.length} links, all https`;
+  });
+
+  await check("text items have content", async () => {
+    const texts = items.filter((i) => i.contentType === "TEXT");
+    const empty = texts.filter((i) => !i.content);
+    assert(empty.length === 0, `empty: ${empty.map((i) => i.title).join(", ")}`);
+    const unhighlighted = texts.filter(
+      (i) => i.itemType.name === "snippet" && !i.language,
+    );
+    assert(
+      unhighlighted.length === 0,
+      `snippets without a language: ${unhighlighted.map((i) => i.title).join(", ")}`,
+    );
+    return `${texts.length} text items, snippets all carry a language`;
+  });
+
+  await check("dashboard has pinned and favourite data", async () => {
+    const pinned = items.filter((i) => i.isPinned).length;
+    const favItems = items.filter((i) => i.isFavorite).length;
+    const favCollections = collections.filter((c) => c.isFavorite).length;
+    assert(pinned > 0, "nothing is pinned");
+    assert(favItems > 0, "no favourite items");
+    assert(favCollections > 0, "no favourite collections");
+    return `${pinned} pinned, ${favItems} favourite items, ${favCollections} favourite collections`;
+  });
+
+  displayDemoData(collections, items);
+}
+
+type DemoCollections = Awaited<ReturnType<typeof loadCollections>>;
+
+async function loadCollections(userId: string) {
+  return prisma.collection.findMany({
+    where: { userId },
+    orderBy: { name: "asc" },
+    include: {
+      defaultType: true,
+      items: {
+        orderBy: { item: { title: "asc" } },
+        include: { item: { include: { itemType: true, tags: true } } },
+      },
+    },
+  });
+}
+
+function displayDemoData(
+  collections: DemoCollections,
+  items: { isPinned: boolean; isFavorite: boolean }[],
+) {
+  section("Demo data contents");
+
+  const stats = [
+    `${items.length} items`,
+    `${collections.length} collections`,
+    `${items.filter((i) => i.isFavorite).length} favourite items`,
+    `${collections.filter((c) => c.isFavorite).length} favourite collections`,
+    `${items.filter((i) => i.isPinned).length} pinned`,
+  ];
+  console.log(`  ${stats.join("  |  ")}\n`);
+
+  for (const collection of collections) {
+    const badges = [
+      `default: ${collection.defaultType?.name ?? "none"}`,
+      collection.isFavorite ? "favourite" : null,
+    ].filter(Boolean);
+
+    console.log(
+      `  ${collection.name}  (${badges.join(", ")})\n    ${collection.description ?? ""}`,
+    );
+
+    for (const { item } of collection.items) {
+      const flags = [item.isPinned ? "pinned" : null, item.isFavorite ? "fav" : null]
+        .filter(Boolean)
+        .join(",");
+      const detail =
+        item.contentType === "URL"
+          ? item.url
+          : `${item.language ?? "text"}, ${item.content?.length ?? 0} chars`;
+
+      console.log(
+        `      [${item.itemType.name.padEnd(7)}] ${item.title.padEnd(36)} ${detail}` +
+          (flags ? `  (${flags})` : ""),
+      );
+      if (item.tags.length > 0) {
+        console.log(`${" ".repeat(16)}tags: ${item.tags.map((t) => t.name).join(", ")}`);
+      }
+    }
+    console.log("");
+  }
+}
+
+async function checkWrites() {
+  section("Write round-trip");
+
+  // Everything hangs off one throwaway user, so deleting that user at the end
+  // cascades the whole fixture away without touching the demo data.
   const email = `test-${Date.now()}@devstash.local`;
-  let userId: string | null = null;
   const tagName = `test-tag-${Date.now()}`;
+  let userId: string | null = null;
 
   try {
     await check("creates a user", async () => {
@@ -119,7 +312,9 @@ async function main() {
     });
 
     await check("links an item to a collection", async () => {
-      const item = await prisma.item.findFirstOrThrow({ where: { userId: userId! } });
+      const item = await prisma.item.findFirstOrThrow({
+        where: { userId: userId! },
+      });
       const collection = await prisma.collection.create({
         data: {
           name: "Test Collection",
@@ -174,6 +369,14 @@ async function main() {
       });
     }
   }
+}
+
+async function main() {
+  console.log("\nDevStash database check");
+
+  await checkSchema();
+  await checkDemoData();
+  await checkWrites();
 
   console.log(`\n${passed} passed, ${failed} failed\n`);
 

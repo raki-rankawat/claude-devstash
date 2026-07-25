@@ -2,7 +2,8 @@
 
 > One fast, searchable, AI-enhanced hub for everything a developer keeps scattered.
 
-**Status:** 🚧 Front-end in progress — dashboard UI complete, database layer not started.
+**Status:** 🚧 In progress — dashboard UI complete; database layer live (Prisma 7 + Neon,
+migrated and seeded). The UI still renders from mock data — wiring it to real queries is next.
 
 ---
 
@@ -99,9 +100,12 @@ flowchart TB
 
 ### What actually exists today
 
-Everything on screen renders from a single mock module. No database, auth, or API layer has
-been built yet — the Prisma schema in the project overview is a **target design, not shipped
-code**.
+The database layer is **built and running**: the schema is migrated to Neon and seeded with a
+demo user, 5 collections and 18 items. Auth and the API layer are still unbuilt.
+
+The one thing to know before reading the code: **the two halves are not connected yet.** Every
+page still renders from `mock-data.ts` — `src/lib/prisma.ts` is a client singleton nothing
+imports so far.
 
 ```mermaid
 flowchart LR
@@ -110,22 +114,25 @@ flowchart LR
     Shell["(dashboard)/layout.tsx"] --> Sidebar & Topbar
     Sidebar --> Mock
 
-    Mock -.->|"next milestone"| Prisma["Prisma queries"]
-    Prisma -.-> DB[("Neon Postgres")]
+    Seed["prisma/seed.ts"] --> DB[("Neon Postgres")]
+    Client["src/lib/prisma.ts<br/><small>singleton, unused so far</small>"] --> DB
+    Check["scripts/test-db.ts"] --> DB
+
+    Mock -.->|"next milestone"| Client
 
     style Mock fill:#f97316,stroke:#f97316,color:#fff
-    style Prisma stroke-dasharray: 5 5
-    style DB stroke-dasharray: 5 5
+    style DB fill:#10b981,stroke:#10b981,color:#fff
 ```
 
-`mock-data.ts` deliberately mirrors the planned schema shapes (`ItemType`, `Collection`,
-`Item`, `User`), so replacing it with Prisma queries stays a mechanical swap.
+`mock-data.ts` deliberately mirrors the real schema shapes (`ItemType`, `Collection`, `Item`,
+`User`), and the seed was written to match what the dashboard already displays — pinned items,
+favourite collections, per-type counts — so the swap stays mechanical.
 
 ---
 
 ## Data Model
 
-Planned relational model (implemented in Prisma at the database milestone):
+Shipped in [prisma/schema.prisma](prisma/schema.prisma) and applied as the `init` migration:
 
 ```mermaid
 erDiagram
@@ -147,8 +154,14 @@ Notable decisions:
   `isSystem: true`; user-defined custom types are the same shape with a `userId`.
 - **`contentType` (`TEXT` / `FILE` / `URL`)** decides which content column an item uses, and
   therefore which editor the UI shows.
+- **Delete rules are deliberate.** A user cascades to their items, collections and custom
+  types; `items.itemTypeId` is `RESTRICT` so a type in use cannot be deleted out from under
+  its items; `collections.defaultTypeId` is `SET NULL`.
+- **Tags are global, not user-owned** — they have no `userId`, so nothing cascades them. The
+  seed sweeps orphans explicitly.
 
-Full schema: [context/project-overview.md](context/project-overview.md).
+Full schema: [prisma/schema.prisma](prisma/schema.prisma) ·
+product spec: [context/project-overview.md](context/project-overview.md).
 
 ---
 
@@ -164,12 +177,17 @@ Full schema: [context/project-overview.md](context/project-overview.md).
 | 🩷 Image   | `Image`      | `#ec4899` pink       | FILE    | `/items/images`   |
 | 🟢 Link    | `Link`       | `#10b981` emerald    | URL     | `/items/links`    |
 
+All seven are seeded as `ItemType` rows with `isSystem: true` and a null `userId` — the seed
+looks them up and updates in place rather than upserting, because Postgres treats that null as
+distinct in the `[name, userId]` unique index, so `upsert` would insert a duplicate set on
+every run.
+
 Type presentation resolves through **three coordinated layers** — adding or renaming a type
 means editing all of them:
 
 ```mermaid
 flowchart LR
-    A["mock-data.ts<br/><small>itemTypes[] — icon as string</small>"] --> B["item-type-icons.ts<br/><small>string → Lucide component<br/>name → Tailwind classes</small>"]
+    A["ItemType row<br/><small>seeded; mirrored in mock-data.ts<br/>icon stored as a string</small>"] --> B["item-type-icons.ts<br/><small>string → Lucide component<br/>name → Tailwind classes</small>"]
     C["globals.css<br/><small>--color-&lt;type&gt; theme token</small>"] --> B
     B --> D["Rendered card / row / nav link"]
 ```
@@ -186,7 +204,7 @@ flowchart LR
 flowchart TD
     S1["✅ 1 · Scaffold<br/>Next 16 · TS · Tailwind v4"]
     S2["✅ 2 · Dashboard UI<br/>3 phases, mock-data driven"]
-    S3["⬜ 3 · Database<br/>Prisma 7 + Neon + migrations + seed"]
+    S3["✅ 3 · Database<br/>Prisma 7 + Neon + migrations + seed"]
     S4["⬜ 4 · Auth<br/>NextAuth v5 — email + GitHub"]
     S5["⬜ 5 · Items CRUD<br/>server actions + Zod + markdown editor"]
     S6["⬜ 6 · Collections CRUD<br/>many-to-many assignment"]
@@ -202,7 +220,8 @@ flowchart TD
 
     style S1 fill:#10b981,stroke:#10b981,color:#fff
     style S2 fill:#10b981,stroke:#10b981,color:#fff
-    style S3 fill:#f97316,stroke:#f97316,color:#fff
+    style S3 fill:#10b981,stroke:#10b981,color:#fff
+    style S4 fill:#f97316,stroke:#f97316,color:#fff
 ```
 
 The UI was built first, against mock data, so that layout and interaction decisions were
@@ -219,6 +238,8 @@ settled before any schema was committed to migrations.
 | **Dashboard Phase 1** _shell_    | shadcn/ui (`base-nova`) init, `/dashboard` route group, sidebar/main shell, dark mode by default, top bar with display-only search + New Item button |
 | **Dashboard Phase 2** _sidebar_  | Types nav with per-type counts and active highlighting, Collections split into Favorites / Recent, user footer, desktop collapse + mobile drawer     |
 | **Dashboard Phase 3** _content_  | 4 stat cards, recent Collections grid with type-coloured accents, Pinned items, 10 most recent items; `StatCard` / `CollectionCard` / `ItemRow`      |
+| **Database layer**           | Prisma 7 + Neon: 9 models incl. NextAuth, `init` migration applied, client singleton, `scripts/test-db.ts`, `db:*` scripts                           |
+| **Seed data**                | Demo user (bcryptjs, 12 rounds) + 5 collections + 18 items with real URLs, tags, pins and favourites; re-runnable                                    |
 
 **Dashboard shell behaviour** — one component tree serves both viewports:
 
@@ -236,8 +257,28 @@ stateDiagram-v2
 `md:w-0`) and `openMobile` (off-canvas drawer + backdrop) — and `toggle()` routes to the right
 one based on `useIsMobile()`.
 
-**Not yet built:** authentication, database, item/collection CRUD, real search, file uploads,
-billing, AI features. Sidebar links to `/items/<type>` and `/collections/<id>` are placeholders.
+**Database layer** — what shipped, and what it is not yet doing:
+
+```mermaid
+flowchart TB
+    subgraph Built["✅ Built"]
+        M["9 models + ContentType enum<br/>NextAuth: Account · Session · VerificationToken"]
+        Mig["init migration<br/>10 tables · 18 indexes · 11 FKs<br/>cascade / restrict / set-null rules"]
+        Seed["Seed: demo user + 5 collections + 18 items"]
+        Test["scripts/test-db.ts — 18 checks"]
+    end
+
+    subgraph Pending["⬜ Not wired up"]
+        Q["Dashboard still reads mock-data.ts"]
+        A["No auth — User.password is seeded but unused"]
+    end
+
+    Built -.-> Pending
+```
+
+**Not yet built:** authentication, item/collection CRUD, real search, file uploads, billing,
+AI features. Sidebar links to `/items/<type>` and `/collections/<id>` are placeholders, and no
+page queries the database yet.
 
 ---
 
@@ -277,22 +318,54 @@ Full guidelines: [context/ai-interaction.md](context/ai-interaction.md) ·
 ## Getting Started
 
 ```bash
-npm install
+npm install                 # postinstall runs `prisma generate`
+cp .env.example .env        # fill in your Neon connection strings
+npx prisma migrate deploy   # apply the committed migrations
+npm run db:seed             # demo user + 5 collections + 18 items
+npm run db:test             # confirm it all landed
 npm run dev
 ```
 
-Open <http://localhost:3000/dashboard>. No `.env` is required yet — the app runs entirely on
-mock data.
+Open <http://localhost:3000/dashboard>. The dashboard itself still renders from mock data, so
+it will display even before the database steps — but `db:seed` and `db:test` need a real
+connection.
 
-| Command            | Purpose                                                   |
-| ------------------ | --------------------------------------------------------- |
-| `npm run dev`      | Dev server (Turbopack) on `:3000`                          |
-| `npm run build`    | Production build — must pass before any commit             |
-| `npm start`        | Serve the production build                                 |
-| `npm run lint`     | ESLint flat config across the repo                         |
-| `npx next typegen` | Regenerate `PageProps` / `LayoutProps` / `RouteContext`    |
+### Environment
 
-No test runner is configured yet — verification today is `npm run build` plus a browser check.
+Both variables point at the same Neon database and both are required:
+
+| Variable       | Endpoint                        | Used by                             |
+| -------------- | ------------------------------- | ----------------------------------- |
+| `DATABASE_URL` | **pooled** — `-pooler` in host  | the app and seed, at runtime         |
+| `DIRECT_URL`   | **direct** — no `-pooler`       | the Prisma CLI, for migrations       |
+
+The split matters: PgBouncer in transaction mode cannot run the DDL the schema engine emits,
+so migrations need the direct endpoint.
+
+> ⚠️ **Migrations need outbound TCP on port 5432.** The schema engine connects directly and
+> cannot use the driver adapter, so `prisma migrate` fails with `P1001` on networks that block
+> that port — a mobile hotspot is the quickest workaround. Ordinary app queries are unaffected,
+> because `@prisma/adapter-neon` tunnels over WebSockets on 443.
+
+### Commands
+
+| Command             | Purpose                                                    |
+| ------------------- | ---------------------------------------------------------- |
+| `npm run dev`       | Dev server (Turbopack) on `:3000`                           |
+| `npm run build`     | Production build — must pass before any commit              |
+| `npm start`         | Serve the production build                                  |
+| `npm run lint`      | ESLint flat config across the repo                          |
+| `npm run db:migrate`| `prisma migrate dev` — create + apply a migration           |
+| `npm run db:deploy` | `prisma migrate deploy` — apply migrations in production    |
+| `npm run db:status` | Check the migration history is in sync                      |
+| `npm run db:seed`   | Rebuild the demo data (safe to re-run)                      |
+| `npm run db:test`   | 18 checks over schema, demo data and constraints            |
+| `npm run db:studio` | Prisma Studio                                               |
+| `npm run db:generate`| Regenerate the client into `src/generated/prisma`           |
+| `npx next typegen`  | Regenerate `PageProps` / `LayoutProps` / `RouteContext`     |
+
+No unit-test runner is configured yet — verification today is `npm run build`, `npm run db:test`
+and a browser check.
 
 ---
 
@@ -306,6 +379,13 @@ devstash/
 │   ├── ai-interaction.md       #   the workflow above
 │   ├── current-feature.md      #   in-flight work + completed history
 │   └── features/               #   per-feature specs
+├── prisma/
+│   ├── schema.prisma           # Models — no datasource url, that lives in prisma.config.ts
+│   ├── migrations/             #   generated SQL, committed and replayed in production
+│   └── seed.ts                 #   demo user + 5 collections + 18 items
+├── scripts/
+│   └── test-db.ts              # Schema / demo data / constraint checks — `npm run db:test`
+├── prisma.config.ts            # Prisma 7 config — schema path, migrations dir, seed command
 └── src/
     ├── app/
     │   ├── (dashboard)/        # Route group — shell layout applies to everything inside
@@ -317,8 +397,9 @@ devstash/
     │   ├── dashboard/          # StatCard, CollectionCard, ItemRow (server components)
     │   ├── layout/             # Sidebar, Topbar, SidebarToggle, sidebar-provider
     │   └── ui/                 # shadcn/ui primitives
+    ├── generated/prisma/       # Generated Prisma client — gitignored, built by `db:generate`
     ├── hooks/                  # use-mobile
-    └── lib/                    # mock-data, item-type-icons, utils
+    └── lib/                    # prisma (client singleton), mock-data, item-type-icons, utils
 ```
 
 ---
@@ -332,9 +413,11 @@ devstash/
 | Styling        | Tailwind CSS v4 (CSS config)      | ✅ In use   |
 | Components     | shadcn/ui `base-nova` + Base UI    | ✅ In use   |
 | Icons          | lucide-react                      | ✅ In use   |
-| ORM            | Prisma 7                          | ⬜ Planned  |
-| Database       | Neon PostgreSQL                   | ⬜ Planned  |
-| Auth           | NextAuth v5 (email + GitHub)      | ⬜ Planned  |
+| ORM            | Prisma 7 (`prisma-client` generator) | ✅ In use   |
+| DB driver      | `@prisma/adapter-neon` over WebSockets | ✅ In use   |
+| Database       | Neon PostgreSQL (serverless)      | ✅ In use   |
+| Password hash  | bcryptjs (12 rounds)              | ✅ In use   |
+| Auth           | NextAuth v5 (email + GitHub)      | ⬜ Planned — models exist |
 | File storage   | Cloudflare R2                     | ⬜ Planned  |
 | AI             | OpenAI GPT-4o Mini                | ⬜ Planned  |
 | Payments       | Stripe                            | ⬜ Planned  |
@@ -355,3 +438,22 @@ devstash/
 - **Next.js 16 diverges from older App Router guides** — see [AGENTS.md](AGENTS.md) and consult
   `node_modules/next/dist/docs/` before relying on remembered APIs.
 - **Path alias:** `@/*` → `./src/*`.
+
+### Prisma 7 specifics
+
+v7 broke several habits carried over from v6; each of these is load-bearing here:
+
+- **The datasource URL is not in `schema.prisma`.** It lives in `prisma.config.ts`, which also
+  declares the migrations directory and seed command. `.env` is **not** auto-loaded any more —
+  hence `import "dotenv/config"` at the top of the config and every standalone script.
+- **Import the client from `@/generated/prisma/client`, not `@prisma/client`.** The generator is
+  `prisma-client` with an explicit `output`; it no longer writes into `node_modules`. The output
+  is gitignored, so `postinstall` regenerates it on every install.
+- **A driver adapter is mandatory** — there is no bundled query engine that opens its own
+  connection. [src/lib/prisma.ts](src/lib/prisma.ts) wires `PrismaNeon`.
+- **`prisma generate` is no longer implicit** after `migrate dev` (`--skip-generate` was
+  removed), so run `npm run db:generate` after schema changes.
+- **`$queryRaw` cannot deserialize Postgres' `name` type** — cast system columns to text, e.g.
+  `select current_database()::text`.
+- **Migrations, never `db push`.** `prisma migrate dev` in development, `prisma migrate deploy`
+  in production; check with `npm run db:status`.

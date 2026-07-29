@@ -1,4 +1,4 @@
-# Current Feature: Add Pro Badge to Sidebar
+# Current Feature
 
 <!-- Feature Name -->
 
@@ -6,31 +6,15 @@
 
 <!-- Not Started|In Progress|Completed -->
 
-In Progress
+Completed
 
 ## Goals
 
 <!-- Goals & requirements -->
 
-- Show a PRO badge on the Files and Images rows of the sidebar's Types nav
-- Use the ShadCN `Badge` component
-- Keep the badge clean and subtle — it should not compete with the type label or the item count
-- Render the text as uppercase `PRO`
-
 ## Notes
 
 <!-- Any extra notes -->
-
-- Spec: `context/features/add-pro-badge-sidebar.md`
-- `Badge` is not installed yet — only `button` and `input` exist in `src/components/ui/`, so
-  this starts with `npx shadcn@latest add badge`
-- The Types rows live in `src/components/layout/Sidebar.tsx` (~line 71) and currently render
-  icon → label → item count. The badge needs a slot in that row without pushing the count out
-- Which types are Pro is already established in `context/project-overview.md`: File and Image
-  are the Pro-only types. Match on the type `name` (`file`, `image`) — the table stores the
-  singular name, same key `ITEM_TYPE_ICONS` and the colour maps use
-- Display only. Free/Pro gating is not enabled during development, so nothing about this badge
-  should block navigation or read `user.isPro`
 
 ## History
 
@@ -45,3 +29,4 @@ In Progress
 - Dashboard Collections — the collections grid and the two collection stat cards now read from Postgres instead of `src/lib/mock-data.ts`. New `src/lib/db/collections.ts`: `getRecentCollections` pulls the 6 most recently updated collections together with their join rows in a single round trip and tallies the item types in memory, so each card gets its item count, most-used type (drives the left border accent) and distinct type icons without a per-card query — icon ties break on type name so the row stays stable between renders; `getCollectionStats` returns the total and favourite counts. `src/lib/db/user.ts` resolves the seeded `demo@devstash.io` account and returns null when the seed has not run, so the page falls back to an empty state rather than throwing — this is the seam NextAuth replaces later. Shapes live in `src/types/collection.ts`, `CollectionCard` now takes a `DashboardCollection`, and the page became an async server component with `dynamic = "force-dynamic"` so per-user data is never prerendered at build time. The item stat cards and the sidebar collections stay on mock data until the items feature
 - Dashboard Items — the pinned list, the recent items list and the two item stat cards now read from Postgres, so nothing in the dashboard's main area comes from `src/lib/mock-data.ts` any more. New `src/lib/db/items.ts`: `getPinnedItems` and `getRecentItems` (10 by default) share one `select` that joins the item type and tags, so a list costs a single round trip rather than a query per row; tags are ordered by name because an implicit many-to-many guarantees no ordering of its own and the chip row would otherwise shuffle between renders. `getItemStats` returns the total and favourite counts. Shapes live in `src/types/item.ts` (`DashboardItem`, `DashboardItemType`, `ItemStats`), and `ItemRow` now takes a `DashboardItem` and reads its icon, border accent and tint straight off `item.type` instead of looking the id up in the mock `itemTypes` array — `formatDate` takes a `Date` rather than an ISO string. All five dashboard queries issue together in the existing `Promise.all`. Recent Items gained the dashed empty state the collections grid already had, since an unseeded database otherwise rendered a bare heading; Pinned still hides entirely when nothing is pinned. Markup is otherwise untouched. The seed writes all 18 items in one pass so they share an `updatedAt` and the recent ordering within that tie is arbitrary until items are edited through the UI, and the rows link to `/items/[id]`, which does not exist yet. `src/lib/mock-data.ts` stays for the sidebar
 - Stats & Sidebar — the sidebar now reads from Postgres, so no rendered data comes from `src/lib/mock-data.ts` except the user footer. The main-area stat cards already read from the database (Dashboard Collections/Items), so this feature was the Types nav and the Collections list. `getItemTypeCounts` in `src/lib/db/items.ts` returns the system types with the user's per-type item count: the types and a single `groupBy` over items issue together, so the nav costs two round trips rather than one count per type, and types with no items are simply absent from the tally and default to zero. `item_types` has no ordering column and alphabetical would scatter the text types among the file ones, so rows are sorted into an explicit `SYSTEM_TYPE_ORDER` with anything unlisted trailing by name. It takes a nullable user id and still lists all seven types (all zeroes) when the seed has not run, since the nav is navigation rather than user data. `getSidebarCollections` in `src/lib/db/collections.ts` returns every favourite plus the N most recent non-favourites as two parallel queries, reusing the existing `rankTypesByUsage` helper so the dot colour resolves exactly as the grid's border accent does, default type included as the fallback for an empty collection. Labels and routes are derived in `src/lib/item-type-icons.ts` (`itemTypeLabel`, `itemTypeRoute`) because the table stores only the singular name — routes stay plural (`/items/snippets`) per the project-overview route table. New `ITEM_TYPE_DOT_BG` map for the solid dot colours, and shapes in `src/types/item.ts` (`SidebarItemType`) and `src/types/collection.ts` (`SidebarCollection`, `SidebarCollections`). `Sidebar` is still a client component (it needs `usePathname` and the drawer state) so `(dashboard)/layout.tsx` became an async server component that fetches and passes both props down, and gained `dynamic = "force-dynamic"` for the same reason the dashboard page has it. `getCurrentUserId` is now wrapped in React's `cache` so the layout and the page share one lookup per render pass — Prisma calls are not deduplicated the way `fetch` is. The dot replaces the generic folder icon on recent rows so the item count survives; favourites keep folder + star. A "View all collections" link sits under both groups, and an empty database shows "No collections yet." rather than a bare heading. Verified against the seed: types tally 4/3/5/0/0/0/6 = the 18-item stat card, and the three recent dots match their cards' border accents
+- Pro Badge — the sidebar's Types nav marks Files and Images with a `PRO` badge, the two Pro-only types per the feature comparison in `context/project-overview.md`. `src/components/ui/badge.tsx` added via `npx shadcn@latest add badge`, the first shadcn component the project needed beyond `button` and `input`. Which types are Pro lives in `src/lib/item-type-icons.ts` as a private `PRO_ITEM_TYPES` set behind an exported `isProItemType(name)`, keyed on the singular `ItemType.name` like every other map in that module — the set is private so real gating later has a single place to read rather than a list callers can drift from. `ProBadge` is a file-local helper in `Sidebar.tsx` alongside `TypeDot` and `SubGroupLabel`, rendered between the label and the item count: the label keeps `flex-1 truncate` and the badge is `shrink-0` by default, so a long type name truncates instead of pushing the badge out and the count column stays right-aligned across all seven rows. Styling is `variant="outline"` scaled down — the badge's default `h-5` is as tall as the `py-1.5` nav row itself, so it drops to `h-4` with `text-[0.625rem]`, and takes `border-sidebar-border` plus `text-muted-foreground` to sit in the sidebar's own chrome rather than read as a call to action. `title="Pro feature"` gives the hover affordance; the accessible name is "Files PRO 0". Display only — nothing reads `user.isPro` or blocks navigation, matching the project-overview note that Pro gating is enabled before launch, not during development

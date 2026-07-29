@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Clock, FileStack, FolderHeart, Library, Pin, Star } from "lucide-react";
 
-import { collections, items, itemTypes } from "@/lib/mock-data";
+import { items, itemTypes } from "@/lib/mock-data";
+import { getCollectionStats, getRecentCollections } from "@/lib/db/collections";
+import { getCurrentUserId } from "@/lib/db/user";
 import { CollectionCard } from "@/components/dashboard/collection-card";
 import { ItemRow } from "@/components/dashboard/item-row";
 import { StatCard } from "@/components/dashboard/stat-card";
@@ -11,9 +13,9 @@ export const metadata: Metadata = {
   title: "Dashboard | DevStash",
 };
 
-const recentCollections = [...collections].sort(
-  (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
-);
+// The dashboard renders per-user database state, so it must not be prerendered
+// at build time.
+export const dynamic = "force-dynamic";
 
 const pinnedItems = items.filter((item) => item.isPinned);
 
@@ -21,40 +23,47 @@ const recentItems = [...items]
   .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
   .slice(0, 10);
 
-// Total items reflects the per-type counts advertised in the sidebar rather than
-// the length of the sample `items` array. Favorites are derived from the array.
+// Item stats are still mock data — they move to the database with the items
+// feature. Total items reflects the per-type counts advertised in the sidebar
+// rather than the length of the sample `items` array.
 const totalItems = itemTypes.reduce((sum, type) => sum + type.itemCount, 0);
 const favoriteItems = items.filter((item) => item.isFavorite).length;
-const favoriteCollections = collections.filter((c) => c.isFavorite).length;
 
-const stats = [
-  {
-    label: "Items",
-    value: totalItems,
-    icon: FileStack,
-    iconClassName: "bg-snippet/10 text-snippet",
-  },
-  {
-    label: "Collections",
-    value: collections.length,
-    icon: Library,
-    iconClassName: "bg-prompt/10 text-prompt",
-  },
-  {
-    label: "Favorite Items",
-    value: favoriteItems,
-    icon: Star,
-    iconClassName: "bg-note/10 text-note",
-  },
-  {
-    label: "Favorite Collections",
-    value: favoriteCollections,
-    icon: FolderHeart,
-    iconClassName: "bg-link/10 text-link",
-  },
-];
+export default async function DashboardPage() {
+  const userId = await getCurrentUserId();
 
-export default function DashboardPage() {
+  const [recentCollections, collectionStats] = await Promise.all([
+    userId ? getRecentCollections(userId) : [],
+    userId ? getCollectionStats(userId) : { total: 0, favorites: 0 },
+  ]);
+
+  const stats = [
+    {
+      label: "Items",
+      value: totalItems,
+      icon: FileStack,
+      iconClassName: "bg-snippet/10 text-snippet",
+    },
+    {
+      label: "Collections",
+      value: collectionStats.total,
+      icon: Library,
+      iconClassName: "bg-prompt/10 text-prompt",
+    },
+    {
+      label: "Favorite Items",
+      value: favoriteItems,
+      icon: Star,
+      iconClassName: "bg-note/10 text-note",
+    },
+    {
+      label: "Favorite Collections",
+      value: collectionStats.favorites,
+      icon: FolderHeart,
+      iconClassName: "bg-link/10 text-link",
+    },
+  ];
+
   return (
     <div className="mx-auto w-full max-w-6xl space-y-10">
       {/* Header */}
@@ -81,11 +90,17 @@ export default function DashboardPage() {
             View all
           </Link>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {recentCollections.map((collection) => (
-            <CollectionCard key={collection.id} collection={collection} />
-          ))}
-        </div>
+        {recentCollections.length > 0 ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {recentCollections.map((collection) => (
+              <CollectionCard key={collection.id} collection={collection} />
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+            No collections yet.
+          </p>
+        )}
       </section>
 
       {/* Pinned */}

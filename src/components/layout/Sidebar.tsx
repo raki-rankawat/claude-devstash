@@ -10,12 +10,14 @@ import {
   ITEM_TYPE_DOT_BG,
   ITEM_TYPE_ICONS,
   ITEM_TYPE_TEXT_COLOR,
+  isProItemType,
   itemTypeLabel,
   itemTypeRoute,
 } from "@/lib/item-type-icons";
 import { cn } from "@/lib/utils";
 import type { SidebarCollections } from "@/types/collection";
 import type { SidebarItemType } from "@/types/item";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { NavSection } from "@/components/layout/nav-section";
 import { useSidebar } from "@/components/layout/sidebar-provider";
@@ -84,6 +86,7 @@ export function Sidebar({ itemTypes, collections }: SidebarProps) {
                     <span className="flex-1 truncate">
                       {itemTypeLabel(type.name)}
                     </span>
+                    {isProItemType(type.name) && <ProBadge />}
                     <span className="text-xs text-muted-foreground">
                       {type.itemCount}
                     </span>
@@ -173,6 +176,23 @@ function TypeDot({ typeName }: { typeName: string | null }) {
     <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
       <span className={cn("size-2.5 rounded-full", color ?? "bg-muted-foreground/40")} />
     </span>
+  );
+}
+
+/**
+ * Marks a Pro-only type in the Types nav. Scaled down from the badge default,
+ * which is as tall as the nav row itself, and toned to the sidebar's border and
+ * muted text so it reads as a label rather than a call to action.
+ */
+function ProBadge() {
+  return (
+    <Badge
+      variant="outline"
+      title="Pro feature"
+      className="h-4 border-sidebar-border px-1.5 text-[0.625rem] tracking-wider text-muted-foreground"
+    >
+      PRO
+    </Badge>
   );
 }
 

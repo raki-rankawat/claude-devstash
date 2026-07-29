@@ -1,4 +1,4 @@
-# Current Feature
+# Current Feature: Add Pro Badge to Sidebar
 
 <!-- Feature Name -->
 
@@ -6,15 +6,31 @@
 
 <!-- Not Started|In Progress|Completed -->
 
-Completed
+In Progress
 
 ## Goals
 
 <!-- Goals & requirements -->
 
+- Show a PRO badge on the Files and Images rows of the sidebar's Types nav
+- Use the ShadCN `Badge` component
+- Keep the badge clean and subtle — it should not compete with the type label or the item count
+- Render the text as uppercase `PRO`
+
 ## Notes
 
 <!-- Any extra notes -->
+
+- Spec: `context/features/add-pro-badge-sidebar.md`
+- `Badge` is not installed yet — only `button` and `input` exist in `src/components/ui/`, so
+  this starts with `npx shadcn@latest add badge`
+- The Types rows live in `src/components/layout/Sidebar.tsx` (~line 71) and currently render
+  icon → label → item count. The badge needs a slot in that row without pushing the count out
+- Which types are Pro is already established in `context/project-overview.md`: File and Image
+  are the Pro-only types. Match on the type `name` (`file`, `image`) — the table stores the
+  singular name, same key `ITEM_TYPE_ICONS` and the colour maps use
+- Display only. Free/Pro gating is not enabled during development, so nothing about this badge
+  should block navigation or read `user.isPro`
 
 ## History
 

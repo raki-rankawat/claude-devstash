@@ -69,6 +69,17 @@ export const ITEM_TYPE_DOT_BG: Record<string, string> = {
 };
 
 /**
+ * ItemType.names that are Pro-only features. Marks them in the UI — gating is
+ * not enforced during development, so this is presentational for now.
+ */
+const PRO_ITEM_TYPES = new Set(["file", "image"]);
+
+/** Whether an ItemType.name is a Pro-only type. */
+export function isProItemType(name: string): boolean {
+  return PRO_ITEM_TYPES.has(name);
+}
+
+/**
  * Nav label for an ItemType.name, e.g. "snippet" → "Snippets". The table stores
  * the singular name only, so the plural shown in the UI is derived.
  */

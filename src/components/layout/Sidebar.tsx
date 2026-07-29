@@ -3,31 +3,37 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Folder, Layers, Settings, Star } from "lucide-react";
+import { ChevronRight, Folder, Layers, Settings, Star } from "lucide-react";
 
+import { currentUser, type User } from "@/lib/mock-data";
 import {
-  collections,
-  currentUser,
-  itemTypes,
-  type User,
-} from "@/lib/mock-data";
-import { ITEM_TYPE_ICONS, ITEM_TYPE_TEXT_COLOR } from "@/lib/item-type-icons";
+  ITEM_TYPE_DOT_BG,
+  ITEM_TYPE_ICONS,
+  ITEM_TYPE_TEXT_COLOR,
+  itemTypeLabel,
+  itemTypeRoute,
+} from "@/lib/item-type-icons";
 import { cn } from "@/lib/utils";
+import type { SidebarCollections } from "@/types/collection";
+import type { SidebarItemType } from "@/types/item";
 import { Button } from "@/components/ui/button";
 import { NavSection } from "@/components/layout/nav-section";
 import { useSidebar } from "@/components/layout/sidebar-provider";
 
-const favoriteCollections = collections.filter((c) => c.isFavorite);
+interface SidebarProps {
+  /** System item types with per-type counts, in display order. */
+  itemTypes: SidebarItemType[];
+  /** The user's collections, split into favourites and recents. */
+  collections: SidebarCollections;
+}
 
-const recentCollections = collections
-  .filter((c) => !c.isFavorite)
-  .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
-
-export function Sidebar() {
+export function Sidebar({ itemTypes, collections }: SidebarProps) {
   const { open, openMobile, setOpenMobile } = useSidebar();
   const pathname = usePathname();
 
   const closeMobile = () => setOpenMobile(false);
+  const hasCollections =
+    collections.favorites.length > 0 || collections.recent.length > 0;
 
   return (
     <>
@@ -64,17 +70,20 @@ export function Sidebar() {
             <NavSection title="Types">
               {itemTypes.map((type) => {
                 const Icon = ITEM_TYPE_ICONS[type.icon] ?? Folder;
+                const href = itemTypeRoute(type.name);
                 return (
                   <SidebarLink
-                    key={type.id}
-                    href={type.route}
-                    active={pathname === type.route}
+                    key={type.name}
+                    href={href}
+                    active={pathname === href}
                     onNavigate={closeMobile}
                   >
                     <Icon
                       className={cn("size-4 shrink-0", ITEM_TYPE_TEXT_COLOR[type.name])}
                     />
-                    <span className="flex-1 truncate">{type.label}</span>
+                    <span className="flex-1 truncate">
+                      {itemTypeLabel(type.name)}
+                    </span>
                     <span className="text-xs text-muted-foreground">
                       {type.itemCount}
                     </span>
@@ -86,10 +95,10 @@ export function Sidebar() {
             <div className="my-2 border-t border-sidebar-border" />
 
             <NavSection title="Collections">
-              {favoriteCollections.length > 0 && (
+              {collections.favorites.length > 0 && (
                 <>
                   <SubGroupLabel>Favorites</SubGroupLabel>
-                  {favoriteCollections.map((collection) => (
+                  {collections.favorites.map((collection) => (
                     <SidebarLink
                       key={collection.id}
                       href={`/collections/${collection.id}`}
@@ -104,17 +113,21 @@ export function Sidebar() {
                 </>
               )}
 
-              {recentCollections.length > 0 && (
+              {collections.recent.length > 0 && (
                 <>
-                  <SubGroupLabel className="mt-3">Recent</SubGroupLabel>
-                  {recentCollections.map((collection) => (
+                  <SubGroupLabel
+                    className={cn(collections.favorites.length > 0 && "mt-3")}
+                  >
+                    Recent
+                  </SubGroupLabel>
+                  {collections.recent.map((collection) => (
                     <SidebarLink
                       key={collection.id}
                       href={`/collections/${collection.id}`}
                       active={pathname === `/collections/${collection.id}`}
                       onNavigate={closeMobile}
                     >
-                      <Folder className="size-4 shrink-0 text-muted-foreground" />
+                      <TypeDot typeName={collection.accentTypeName} />
                       <span className="flex-1 truncate">{collection.name}</span>
                       <span className="text-xs text-muted-foreground">
                         {collection.itemCount}
@@ -123,6 +136,21 @@ export function Sidebar() {
                   ))}
                 </>
               )}
+
+              {!hasCollections && (
+                <p className="px-2 py-1.5 text-sm text-muted-foreground">
+                  No collections yet.
+                </p>
+              )}
+
+              <Link
+                href="/collections"
+                onClick={closeMobile}
+                className="mt-1 flex items-center gap-2.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              >
+                <ChevronRight className="size-3.5 shrink-0" />
+                <span className="truncate">View all collections</span>
+              </Link>
             </NavSection>
           </nav>
 
@@ -130,6 +158,21 @@ export function Sidebar() {
         </div>
       </aside>
     </>
+  );
+}
+
+/**
+ * Colour dot standing in for a collection's most-used item type. Sized to the
+ * icon slot the favourites use, so both groups' labels line up. Falls back to a
+ * neutral dot for an empty collection with no default type.
+ */
+function TypeDot({ typeName }: { typeName: string | null }) {
+  const color = typeName ? ITEM_TYPE_DOT_BG[typeName] : undefined;
+
+  return (
+    <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
+      <span className={cn("size-2.5 rounded-full", color ?? "bg-muted-foreground/40")} />
+    </span>
   );
 }
 

@@ -1,8 +1,22 @@
 import { prisma } from "@/lib/prisma";
-import type { DashboardItem, ItemStats } from "@/types/item";
+import type { DashboardItem, ItemStats, SidebarItemType } from "@/types/item";
 
 /** How many rows the dashboard's Recent Items list shows. */
 export const DASHBOARD_RECENT_ITEM_LIMIT = 10;
+
+/**
+ * Order the system types appear in the sidebar. `item_types` has no ordering
+ * column, and alphabetical would scatter the text types among the file ones.
+ */
+const SYSTEM_TYPE_ORDER = [
+  "snippet",
+  "prompt",
+  "command",
+  "note",
+  "file",
+  "image",
+  "link",
+];
 
 /**
  * Everything an item row renders. The type and tags are joined in rather than
@@ -67,6 +81,63 @@ export async function getItemStats(userId: string): Promise<ItemStats> {
   ]);
 
   return { total, favorites };
+}
+
+/**
+ * The system item types with the user's item count for each, in display order.
+ * Takes a nullable id so the Types nav still renders (all zeroes) before a user
+ * is resolved — the nav is navigation, not user data.
+ */
+export async function getItemTypeCounts(
+  userId: string | null,
+): Promise<SidebarItemType[]> {
+  const [types, countByTypeId] = await Promise.all([
+    prisma.itemType.findMany({
+      where: { isSystem: true },
+      select: { id: true, name: true, icon: true },
+    }),
+    countItemsByType(userId),
+  ]);
+
+  return types
+    .map((type) => ({
+      name: type.name,
+      icon: type.icon,
+      itemCount: countByTypeId.get(type.id) ?? 0,
+    }))
+    .sort(bySystemTypeOrder);
+}
+
+/**
+ * Tallies the user's items per type in one grouped query rather than a count
+ * per type. Types with no items are absent from the result, so callers default
+ * to zero.
+ */
+async function countItemsByType(
+  userId: string | null,
+): Promise<Map<string, number>> {
+  if (!userId) return new Map();
+
+  const rows = await prisma.item.groupBy({
+    by: ["itemTypeId"],
+    where: { userId },
+    _count: { _all: true },
+  });
+
+  return new Map(rows.map((row) => [row.itemTypeId, row._count._all]));
+}
+
+/** Sorts into `SYSTEM_TYPE_ORDER`, with anything unlisted trailing by name. */
+function bySystemTypeOrder(a: SidebarItemType, b: SidebarItemType): number {
+  const aIndex = SYSTEM_TYPE_ORDER.indexOf(a.name);
+  const bIndex = SYSTEM_TYPE_ORDER.indexOf(b.name);
+
+  if (aIndex === -1 || bIndex === -1) {
+    if (aIndex === bIndex) return a.name.localeCompare(b.name);
+    return aIndex === -1 ? 1 : -1;
+  }
+
+  return aIndex - bIndex;
 }
 
 /** Flattens the joined type and tag rows into the shape `ItemRow` consumes. */

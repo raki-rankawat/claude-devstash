@@ -3,10 +3,15 @@ import type {
   CollectionItemType,
   CollectionStats,
   DashboardCollection,
+  SidebarCollection,
+  SidebarCollections,
 } from "@/types/collection";
 
 /** How many collection cards the dashboard grid shows. */
 export const DASHBOARD_COLLECTION_LIMIT = 6;
+
+/** How many non-favourite collections the sidebar's Recent group lists. */
+export const SIDEBAR_RECENT_COLLECTION_LIMIT = 5;
 
 /**
  * Most recently updated collections, with each one's item count and the item
@@ -65,6 +70,72 @@ export async function getCollectionStats(userId: string): Promise<CollectionStat
   ]);
 
   return { total, favorites };
+}
+
+/** What a sidebar row needs: its label, its size and its accent colour. */
+const SIDEBAR_COLLECTION_SELECT = {
+  id: true,
+  name: true,
+  defaultType: { select: { name: true, icon: true } },
+  items: {
+    select: {
+      item: { select: { itemType: { select: { name: true, icon: true } } } },
+    },
+  },
+} as const;
+
+/** The raw shape `SIDEBAR_COLLECTION_SELECT` produces. */
+interface SidebarCollectionRecord {
+  id: string;
+  name: string;
+  defaultType: CollectionItemType | null;
+  items: { item: { itemType: CollectionItemType } }[];
+}
+
+/**
+ * The sidebar's collection groups: every favourite, then the most recently
+ * updated collections that are not already listed above. Both groups issue
+ * together, so the nav costs two round trips regardless of its length.
+ */
+export async function getSidebarCollections(
+  userId: string,
+  recentLimit: number = SIDEBAR_RECENT_COLLECTION_LIMIT,
+): Promise<SidebarCollections> {
+  const [favorites, recent] = await Promise.all([
+    prisma.collection.findMany({
+      where: { userId, isFavorite: true },
+      orderBy: { updatedAt: "desc" },
+      select: SIDEBAR_COLLECTION_SELECT,
+    }),
+    prisma.collection.findMany({
+      where: { userId, isFavorite: false },
+      orderBy: { updatedAt: "desc" },
+      take: recentLimit,
+      select: SIDEBAR_COLLECTION_SELECT,
+    }),
+  ]);
+
+  return {
+    favorites: favorites.map(toSidebarCollection),
+    recent: recent.map(toSidebarCollection),
+  };
+}
+
+/** Reduces a collection to its row data, resolving the accent type as the grid does. */
+function toSidebarCollection(
+  collection: SidebarCollectionRecord,
+): SidebarCollection {
+  const used = rankTypesByUsage(collection.items.map((row) => row.item.itemType));
+
+  // An empty collection has nothing to rank, so fall back to its default type.
+  const accent = used[0] ?? collection.defaultType;
+
+  return {
+    id: collection.id,
+    name: collection.name,
+    itemCount: collection.items.length,
+    accentTypeName: accent?.name ?? null,
+  };
 }
 
 /**

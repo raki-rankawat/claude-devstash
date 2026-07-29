@@ -25,3 +25,18 @@ export interface CollectionStats {
   total: number;
   favorites: number;
 }
+
+/** A collection as listed in the sidebar. */
+export interface SidebarCollection {
+  id: string;
+  name: string;
+  itemCount: number;
+  /** Name of the most-used item type; drives the colour dot on recent entries. */
+  accentTypeName: string | null;
+}
+
+/** The sidebar's two collection groups. */
+export interface SidebarCollections {
+  favorites: SidebarCollection[];
+  recent: SidebarCollection[];
+}

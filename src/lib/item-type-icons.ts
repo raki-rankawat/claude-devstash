@@ -9,7 +9,7 @@ import {
   Terminal,
 } from "lucide-react";
 
-/** Resolves an ItemType.icon name (from mock data) to its lucide component. */
+/** Resolves an ItemType.icon name to its lucide component. */
 export const ITEM_TYPE_ICONS: Record<string, LucideIcon> = {
   Code,
   Sparkles,
@@ -56,3 +56,27 @@ export const ITEM_TYPE_SOFT_BG: Record<string, string> = {
   image: "bg-image/10",
   link: "bg-link/10",
 };
+
+/** Solid background utility per ItemType.name, for the sidebar's colour dots. */
+export const ITEM_TYPE_DOT_BG: Record<string, string> = {
+  snippet: "bg-snippet",
+  prompt: "bg-prompt",
+  command: "bg-command",
+  note: "bg-note",
+  file: "bg-file",
+  image: "bg-image",
+  link: "bg-link",
+};
+
+/**
+ * Nav label for an ItemType.name, e.g. "snippet" → "Snippets". The table stores
+ * the singular name only, so the plural shown in the UI is derived.
+ */
+export function itemTypeLabel(name: string): string {
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)}s`;
+}
+
+/** Route listing every item of a type, e.g. "snippet" → "/items/snippets". */
+export function itemTypeRoute(name: string): string {
+  return `/items/${name}s`;
+}

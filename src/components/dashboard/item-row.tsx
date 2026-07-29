@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Folder, Pin, Star } from "lucide-react";
 
-import { itemTypes, type Item } from "@/lib/mock-data";
 import {
   ITEM_TYPE_BORDER_COLOR,
   ITEM_TYPE_ICONS,
@@ -9,23 +8,21 @@ import {
   ITEM_TYPE_TEXT_COLOR,
 } from "@/lib/item-type-icons";
 import { cn } from "@/lib/utils";
+import type { DashboardItem } from "@/types/item";
 
-const typeById = new Map(itemTypes.map((type) => [type.id, type]));
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", {
+function formatDate(date: Date) {
+  return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
   });
 }
 
 /** A compact item row used by the Pinned and Recent Items lists. */
-export function ItemRow({ item }: { item: Item }) {
-  const type = typeById.get(item.typeId);
-  const Icon = type ? ITEM_TYPE_ICONS[type.icon] ?? Folder : Folder;
-  const accent = type ? ITEM_TYPE_BORDER_COLOR[type.name] : "";
-  const iconBg = type ? ITEM_TYPE_SOFT_BG[type.name] : "";
-  const iconColor = type ? ITEM_TYPE_TEXT_COLOR[type.name] : "";
+export function ItemRow({ item }: { item: DashboardItem }) {
+  const Icon = ITEM_TYPE_ICONS[item.type.icon] ?? Folder;
+  const accent = ITEM_TYPE_BORDER_COLOR[item.type.name];
+  const iconBg = ITEM_TYPE_SOFT_BG[item.type.name];
+  const iconColor = ITEM_TYPE_TEXT_COLOR[item.type.name];
 
   return (
     <Link

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Clock, FileStack, FolderHeart, Library, Pin, Star } from "lucide-react";
 
-import { items, itemTypes } from "@/lib/mock-data";
 import { getCollectionStats, getRecentCollections } from "@/lib/db/collections";
+import { getItemStats, getPinnedItems, getRecentItems } from "@/lib/db/items";
 import { getCurrentUserId } from "@/lib/db/user";
 import { CollectionCard } from "@/components/dashboard/collection-card";
 import { ItemRow } from "@/components/dashboard/item-row";
@@ -17,30 +17,22 @@ export const metadata: Metadata = {
 // at build time.
 export const dynamic = "force-dynamic";
 
-const pinnedItems = items.filter((item) => item.isPinned);
-
-const recentItems = [...items]
-  .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
-  .slice(0, 10);
-
-// Item stats are still mock data — they move to the database with the items
-// feature. Total items reflects the per-type counts advertised in the sidebar
-// rather than the length of the sample `items` array.
-const totalItems = itemTypes.reduce((sum, type) => sum + type.itemCount, 0);
-const favoriteItems = items.filter((item) => item.isFavorite).length;
-
 export default async function DashboardPage() {
   const userId = await getCurrentUserId();
 
-  const [recentCollections, collectionStats] = await Promise.all([
-    userId ? getRecentCollections(userId) : [],
-    userId ? getCollectionStats(userId) : { total: 0, favorites: 0 },
-  ]);
+  const [recentCollections, collectionStats, pinnedItems, recentItems, itemStats] =
+    await Promise.all([
+      userId ? getRecentCollections(userId) : [],
+      userId ? getCollectionStats(userId) : { total: 0, favorites: 0 },
+      userId ? getPinnedItems(userId) : [],
+      userId ? getRecentItems(userId) : [],
+      userId ? getItemStats(userId) : { total: 0, favorites: 0 },
+    ]);
 
   const stats = [
     {
       label: "Items",
-      value: totalItems,
+      value: itemStats.total,
       icon: FileStack,
       iconClassName: "bg-snippet/10 text-snippet",
     },
@@ -52,7 +44,7 @@ export default async function DashboardPage() {
     },
     {
       label: "Favorite Items",
-      value: favoriteItems,
+      value: itemStats.favorites,
       icon: Star,
       iconClassName: "bg-note/10 text-note",
     },
@@ -124,11 +116,17 @@ export default async function DashboardPage() {
           <Clock className="size-4 text-muted-foreground" />
           <h2 className="text-lg font-semibold tracking-tight">Recent Items</h2>
         </div>
-        <div className="space-y-3">
-          {recentItems.map((item) => (
-            <ItemRow key={item.id} item={item} />
-          ))}
-        </div>
+        {recentItems.length > 0 ? (
+          <div className="space-y-3">
+            {recentItems.map((item) => (
+              <ItemRow key={item.id} item={item} />
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+            No items yet.
+          </p>
+        )}
       </section>
     </div>
   );
